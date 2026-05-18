@@ -1,6 +1,7 @@
 package com.example.ncasdk.http;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.Log;
 import com.example.ncasdk.model.MetricEvent;
 import com.example.ncasdk.impl.MetricsCollector;
@@ -145,10 +146,20 @@ public class FlushManager {
             sb.append(",\"unit\":\"").append(escapeJson(event.getUnit())).append("\"");
         }
 
-        java.util.Map<String, String> attrsMap = event.getAttributes();
+        Map<String, String> attrsMap = event.getAttributes();
+        // 👇 Fetch real-time battery percentage right here at flush time
+        float currentBattery = getBatteryLevelPct();
+
         if (attrsMap != null && !attrsMap.isEmpty()) {
             StringBuilder mapBuilder = new StringBuilder();
             mapBuilder.append("{");
+
+            if (currentBattery >= 0.0f) {
+                mapBuilder.append("\"battery_level_pct\":").append(currentBattery);
+                if (attrsMap != null && !attrsMap.isEmpty()) {
+                    mapBuilder.append(",");
+                }
+            }
 
             int count = 0;
             for (java.util.Map.Entry<String, String> entry : attrsMap.entrySet()) {
@@ -241,5 +252,23 @@ public class FlushManager {
 
     public ScheduledExecutorService getScheduler() {
         return this.scheduler;
+    }
+
+    /**
+     * Queries the system for the current battery level as a float percentage between 0.0 and 1.0.
+     */
+    private float getBatteryLevelPct() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                android.os.BatteryManager bm = (android.os.BatteryManager) appContext.getSystemService(Context.BATTERY_SERVICE);
+                if (bm != null) {
+                    int capacity = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY); // Returns 0-100
+                    return capacity / 100.0f; // Convert to Float format (e.g., 0.85)
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to read battery level: " + e.getMessage());
+        }
+        return -1.0f; // Return fallback value if reading fails
     }
 }
