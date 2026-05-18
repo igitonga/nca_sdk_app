@@ -1,6 +1,10 @@
 package com.example.ncasdk.http;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
+import android.net.Network;
 import android.os.Build;
 import android.util.Log;
 import com.example.ncasdk.model.MetricEvent;
@@ -147,13 +151,15 @@ public class FlushManager {
         }
 
         Map<String, String> attrsMap = event.getAttributes();
-        // 👇 Fetch real-time battery percentage right here at flush time
+
         float currentBattery = getBatteryLevelPct();
+        String activeNetwork = getNetworkType();
 
         if (attrsMap != null && !attrsMap.isEmpty()) {
             StringBuilder mapBuilder = new StringBuilder();
             mapBuilder.append("{");
 
+            mapBuilder.append("\"network_type\":\"").append(activeNetwork).append("\"");
             if (currentBattery >= 0.0f) {
                 mapBuilder.append("\"battery_level_pct\":").append(currentBattery);
                 if (attrsMap != null && !attrsMap.isEmpty()) {
@@ -270,5 +276,38 @@ public class FlushManager {
             Log.w(TAG, "Unable to read battery level: " + e.getMessage());
         }
         return -1.0f; // Return fallback value if reading fails
+    }
+
+    /**
+     * Detects the active network interface at flush time.
+     * Returns: "WIFI", "CELLULAR", or "NONE"
+     */
+    private String getNetworkType() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) appContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Network activeNetwork = cm.getActiveNetwork();
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(activeNetwork);
+                    if (caps != null) {
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                            return "WIFI";
+                        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                            return "CELLULAR";
+                        }
+                    }
+                } else {
+                    // Fallback implementation for legacy API levels
+                    NetworkInfo info = cm.getActiveNetworkInfo();
+                    if (info != null && info.isConnected()) {
+                        if (info.getType() == ConnectivityManager.TYPE_WIFI) return "WIFI";
+                        if (info.getType() == ConnectivityManager.TYPE_MOBILE) return "CELLULAR";
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to resolve network interface state: " + e.getMessage());
+        }
+        return "NONE";
     }
 }
